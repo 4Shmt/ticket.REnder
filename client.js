@@ -400,7 +400,20 @@ ticketBot.once('ready', async () => {
 });
 
 // معالجة slash commands للتذاكر
+// منع معالجة interactions متعددة
+const processedInteractions = new Set();
+
 ticketBot.on('interactionCreate', async (interaction) => {
+    // منع معالجة نفس interaction
+    if (processedInteractions.has(interaction.id) || interaction.replied || interaction.deferred) {
+        return;
+    }
+    
+    processedInteractions.add(interaction.id);
+    
+    // تنظيف المعرفات القديمة كل دقيقة
+    setTimeout(() => processedInteractions.delete(interaction.id), 60000);
+    
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
 
@@ -411,15 +424,19 @@ ticketBot.on('interactionCreate', async (interaction) => {
                     const mainEmbed = createTicketMainEmbed();
                     const mainButton = createTicketMainButton();
                     
-                    // إرسال الصورة مع الembed
-                    const { AttachmentBuilder } = require('discord.js');
-                    const attachment = new AttachmentBuilder('images/qren-store-logo.png', { name: 'qren-store-logo.png' });
-                    
-                    await interaction.reply({ 
-                        embeds: [mainEmbed], 
-                        components: [mainButton],
-                        files: [attachment]
-                    });
+                    try {
+                        // إرسال الصورة مع الembed
+                        const { AttachmentBuilder } = require('discord.js');
+                        const attachment = new AttachmentBuilder('images/qren-store-logo.png', { name: 'qren-store-logo.png' });
+                        
+                        await interaction.reply({ 
+                            embeds: [mainEmbed], 
+                            components: [mainButton],
+                            files: [attachment]
+                        });
+                    } catch (replyError) {
+                        console.error('خطأ في الرد على أمر التذكرة:', replyError.message);
+                    }
                     break;
 
                 case 'help':
@@ -437,7 +454,11 @@ ticketBot.on('interactionCreate', async (interaction) => {
                         )
                         .setColor(0x3498db);
                     
-                    await interaction.reply({ embeds: [helpEmbed], ephemeral: true });
+                    try {
+                        await interaction.reply({ embeds: [helpEmbed], flags: [64] });
+                    } catch (replyError) {
+                        console.error('خطأ في الرد على أمر المساعدة:', replyError.message);
+                    }
                     break;
                     
                 case 'مشرفين_التذاكر':
@@ -452,12 +473,14 @@ ticketBot.on('interactionCreate', async (interaction) => {
                     if (action === 'add') {
                         if (!role) {
                             await interaction.reply({ content: 'يجب تحديد الرتبة المراد إضافتها', flags: [64] });
-                            return;
+                            break;
                         }
                         
                         if (adminRoles.includes(role.id)) {
-                            await interaction.reply({ content: `الرتبة ${role.name} موجودة بالفعل في قائمة مشرفين التذاكر`, flags: [64] });
-                            return;
+                            try {
+                                await interaction.reply({ content: `الرتبة ${role.name} موجودة بالفعل في قائمة مشرفين التذاكر`, flags: [64] });
+                            } catch (e) { console.log('خطأ في الرد'); }
+                            break;
                         }
                         
                         adminRoles.push(role.id);
@@ -468,18 +491,20 @@ ticketBot.on('interactionCreate', async (interaction) => {
                             .setDescription(`تم إضافة الرتبة ${role} إلى قائمة مشرفين التذاكر`)
                             .setColor(0x00AE86);
                         
-                        await interaction.reply({ embeds: [addEmbed], flags: [64] });
+                        try {
+                            await interaction.reply({ embeds: [addEmbed], flags: [64] });
+                        } catch (e) { console.log('خطأ في الرد'); }
                         
                     } else if (action === 'remove') {
                         if (!role) {
                             await interaction.reply({ content: 'يجب تحديد الرتبة المراد إزالتها', flags: [64] });
-                            return;
+                            break;
                         }
                         
                         const roleIndex = adminRoles.indexOf(role.id);
                         if (roleIndex === -1) {
                             await interaction.reply({ content: `الرتبة ${role.name} غير موجودة في قائمة مشرفين التذاكر`, flags: [64] });
-                            return;
+                            break;
                         }
                         
                         adminRoles.splice(roleIndex, 1);
@@ -490,12 +515,14 @@ ticketBot.on('interactionCreate', async (interaction) => {
                             .setDescription(`تم إزالة الرتبة ${role} من قائمة مشرفين التذاكر`)
                             .setColor(0xe74c3c);
                         
-                        await interaction.reply({ embeds: [removeEmbed], flags: [64] });
+                        try {
+                            await interaction.reply({ embeds: [removeEmbed], flags: [64] });
+                        } catch (e) { console.log('خطأ في الرد'); }
                         
                     } else if (action === 'list') {
                         if (adminRoles.length === 0) {
                             await interaction.reply({ content: 'لا توجد رتب مشرفين تذاكر محددة حالياً', flags: [64] });
-                            return;
+                            break;
                         }
                         
                         const rolesList = adminRoles.map(roleId => {
@@ -508,7 +535,9 @@ ticketBot.on('interactionCreate', async (interaction) => {
                             .setDescription(rolesList)
                             .setColor(0x3498db);
                         
-                        await interaction.reply({ embeds: [listEmbed], flags: [64] });
+                        try {
+                            await interaction.reply({ embeds: [listEmbed], flags: [64] });
+                        } catch (e) { console.log('خطأ في الرد'); }
                     }
                     break;
                     
@@ -525,76 +554,14 @@ ticketBot.on('interactionCreate', async (interaction) => {
                         .setDescription(`تم تحديد ${logChannel} كروم لسجلات التذاكر.\nسيتم إرسال جميع سجلات التذاكر إلى هذا الروم.`)
                         .setColor(0x00AE86);
                     
-                    await interaction.reply({ embeds: [logEmbed], flags: [64] });
-                    break;
-                    
-                case 'claim_ticket':
-                    // التحقق من أن المستخدم مشرف تذاكر
-                    const claimGuildId = interaction.guild.id;
-                    const claimAdminRoles = ticketBot.adminRoles.get(claimGuildId) || [];
-                    const claimUserRoles = interaction.member.roles.cache.map(role => role.id);
-                    const claimIsAdmin = claimAdminRoles.some(roleId => claimUserRoles.includes(roleId)) || interaction.member.permissions.has('ManageChannels');
-                    
-                    if (!claimIsAdmin) {
-                        await interaction.reply({ content: 'لا يمكنك استلام التذاكر. هذه الميزة مخصصة للمشرفين فقط.', flags: [64] });
-                        break;
-                    }
-                    
-                    const claimEmbed = new EmbedBuilder()
-                        .setTitle('👤 تم استلام التذكرة')
-                        .setDescription(`تم استلام هذه التذكرة من قبل ${interaction.user}\nسيتم التعامل معها في أقرب وقت.`)
-                        .setColor(0x3498db)
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [claimEmbed] });
-                    break;
-                    
-                case 'close_ticket':
-                    // التحقق من أن المستخدم مشرف تذاكر
-                    const closeGuildId = interaction.guild.id;
-                    const closeAdminRoles = ticketBot.adminRoles.get(closeGuildId) || [];
-                    const closeUserRoles = interaction.member.roles.cache.map(role => role.id);
-                    const closeIsAdmin = closeAdminRoles.some(roleId => closeUserRoles.includes(roleId)) || interaction.member.permissions.has('ManageChannels');
-                    
-                    if (!closeIsAdmin) {
-                        await interaction.reply({ content: 'لا يمكنك قفل التذكرة. هذه الميزة مخصصة للمشرفين فقط.', flags: [64] });
-                        break;
-                    }
-                    
-                    const closeEmbed = new EmbedBuilder()
-                        .setTitle('🔒 جاري قفل التذكرة')
-                        .setDescription('سيتم قفل هذه التذكرة في غضون 10 ثوان...')
-                        .setColor(0xe74c3c)
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [closeEmbed] });
-                    
-                    // إرسال السجل قبل الحذف
                     try {
-                        await sendTicketLog(interaction.channel, interaction.user, 'قفل التذكرة');
-                    } catch (logError) {
-                        console.error('خطأ في إرسال سجل التذكرة:', logError);
-                    }
-                    
-                    // حذف القناة بعد 10 ثوان
-                    setTimeout(async () => {
-                        try {
-                            await interaction.channel.delete();
-                        } catch (error) {
-                            console.error('خطأ في حذف قناة التذكرة:', error);
-                        }
-                    }, 10000);
+                        await interaction.reply({ embeds: [logEmbed], flags: [64] });
+                    } catch (e) { console.log('خطأ في الرد'); }
                     break;
             }
         } catch (error) {
-            console.error('خطأ في معالجة slash command:', error);
-            if (!interaction.replied && !interaction.deferred) {
-                try {
-                    await interaction.reply({ content: 'حدث خطأ أثناء تنفيذ الأمر', flags: [64] });
-                } catch (replyError) {
-                    console.error('خطأ في الرد على interaction:', replyError);
-                }
-            }
+            console.error('خطأ في معالجة slash command:', error.message || error);
+            // عدم الرد على الأخطاء لتجنب interaction acknowledged errors
         }
     } else if (interaction.isButton()) {
         try {
@@ -809,16 +776,68 @@ ticketBot.on('interactionCreate', async (interaction) => {
                         flags: [64] 
                     });
                     break;
+
+                case 'claim_ticket':
+                    // التحقق من أن المستخدم مشرف تذاكر
+                    const claimGuildId = interaction.guild.id;
+                    const claimAdminRoles = ticketBot.adminRoles.get(claimGuildId) || [];
+                    const claimUserRoles = interaction.member.roles.cache.map(role => role.id);
+                    const claimIsAdmin = claimAdminRoles.some(roleId => claimUserRoles.includes(roleId)) || interaction.member.permissions.has('ManageChannels');
+                    
+                    if (!claimIsAdmin) {
+                        await interaction.reply({ content: 'لا يمكنك استلام التذاكر. هذه الميزة مخصصة للمشرفين فقط.', flags: [64] });
+                        break;
+                    }
+                    
+                    const claimEmbed = new EmbedBuilder()
+                        .setTitle('👤 تم استلام التذكرة')
+                        .setDescription(`تم استلام هذه التذكرة من قبل ${interaction.user}\nسيتم التعامل معها في أقرب وقت.`)
+                        .setColor(0x3498db)
+                        .setTimestamp();
+                    
+                    await interaction.reply({ embeds: [claimEmbed] });
+                    break;
+                    
+                case 'close_ticket':
+                    // التحقق من أن المستخدم مشرف تذاكر
+                    const closeGuildId = interaction.guild.id;
+                    const closeAdminRoles = ticketBot.adminRoles.get(closeGuildId) || [];
+                    const closeUserRoles = interaction.member.roles.cache.map(role => role.id);
+                    const closeIsAdmin = closeAdminRoles.some(roleId => closeUserRoles.includes(roleId)) || interaction.member.permissions.has('ManageChannels');
+                    
+                    if (!closeIsAdmin) {
+                        await interaction.reply({ content: 'لا يمكنك قفل التذكرة. هذه الميزة مخصصة للمشرفين فقط.', flags: [64] });
+                        break;
+                    }
+                    
+                    const closeEmbed = new EmbedBuilder()
+                        .setTitle('🔒 جاري قفل التذكرة')
+                        .setDescription('سيتم قفل هذه التذكرة في غضون 10 ثوان...')
+                        .setColor(0xe74c3c)
+                        .setTimestamp();
+                    
+                    await interaction.reply({ embeds: [closeEmbed] });
+                    
+                    // إرسال السجل قبل الحذف
+                    try {
+                        await sendTicketLog(interaction.channel, interaction.user, 'قفل التذكرة');
+                    } catch (logError) {
+                        console.error('خطأ في إرسال سجل التذكرة:', logError);
+                    }
+                    
+                    // حذف القناة بعد 10 ثوان
+                    setTimeout(async () => {
+                        try {
+                            await interaction.channel.delete();
+                        } catch (error) {
+                            console.error('خطأ في حذف قناة التذكرة:', error);
+                        }
+                    }, 10000);
+                    break;
             }
         } catch (error) {
-            console.error('خطأ في معالجة الأزرار:', error);
-            if (!interaction.replied && !interaction.deferred) {
-                try {
-                    await interaction.reply({ content: 'حدث خطأ أثناء معالجة طلبك', flags: [64] });
-                } catch (replyError) {
-                    console.error('خطأ في الرد على interaction:', replyError);
-                }
-            }
+            console.error('خطأ في معالجة الأزرار:', error.message || error);
+            // عدم الرد على الأخطاء لتجنب interaction acknowledged errors
         }
     }
 });
